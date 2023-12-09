@@ -175,7 +175,7 @@ class OwnershipBehavior extends Behavior
             }
         }
         if($nullFKey !== false){
-            return null;
+            return true;
         }
 
         $query = $assoc->getTarget()->find()->disableHydration();
@@ -185,7 +185,7 @@ class OwnershipBehavior extends Behavior
         return $query
             ->select($ownerPrimary)
             ->where($conditions)
-            ->first() ?? true;
+            ->first();
     }
 
     /**
@@ -212,7 +212,7 @@ class OwnershipBehavior extends Behavior
                         return false;
                     }
                 }else{
-                    if($this->_getOwnerId($entity, $assoc) != $ownerId){
+                    if(!in_array($this->_getOwnerId($entity, $assoc), [true, $ownerId])){
                         return false;
                     }
                 }
