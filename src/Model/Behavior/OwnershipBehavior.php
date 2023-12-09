@@ -28,7 +28,7 @@ class OwnershipBehavior extends Behavior
     /**
      * Owner associations.
      *
-     * @var array<string, array{is_owner:bool,owner:?string,parent:?string}>
+     * @var array<string, array{owner:?string,parent:?string}>
      */
     protected static $_ownerAssociations = [];
 
@@ -52,7 +52,7 @@ class OwnershipBehavior extends Behavior
      * Get the setting from ownerAssociations.
      * 
      * @param string $tableAlias
-     * @return array{is_owner:bool,owner:?string,parent:?string}
+     * @return array{owner:?string,parent:?string}
      * @throws \Exception
      */
     protected static function _getOwnerAssocConfig(string $tableAlias): array
@@ -62,23 +62,23 @@ class OwnershipBehavior extends Behavior
             $behavior = static::_getBehavior($tableAlias);
 
             if(isset($behavior)){
-                $is_owner = $table instanceof OwnersTableInterface;
                 $owner = $behavior->getConfig('owner');
                 $parent = $behavior->getConfig('parent');
                 if(isset($owner) && isset($parent)){
                     if(!(TableRegistry::getTableLocator()->get($owner) instanceof OwnersTableInterface)){
                         throw new \Exception($owner.'Table must implement OwnersTableInterface.');
                     }
-                    if(!in_array($table->getAssociation($parent)->type(), [Association::MANY_TO_ONE, Association::MANY_TO_MANY])){
-                        throw new \Exception($tableAlias.'Table must have belongsTo or belongsToMany '.$parent.' Association.');
+                    if($table->getAssociation($parent)->type() != Association::MANY_TO_ONE){
+                        throw new \Exception($tableAlias.'Table must have a BelongsTo association with the \''.$parent.'\' association key.');
                     }
                 }else if(isset($owner) || isset($parent)){
-                    throw new \Exception('owner and parent must be set together.');
+                    throw new \Exception('Both \'owner\' and \'parent\' must be either set or null.');
                 }
             }else{
-                throw new \Exception($tableAlias.'Table must have OwnershipBehavior.');
+                $owner = null;
+                $parent = null;
             }
-            static::$_ownerAssociations[$tableAlias] = ['is_owner' => $is_owner, 'owner' => $owner, 'parent' => $parent];
+            static::$_ownerAssociations[$tableAlias] = ['owner' => $owner, 'parent' => $parent];
         }
         return static::$_ownerAssociations[$tableAlias];
     }
@@ -95,7 +95,7 @@ class OwnershipBehavior extends Behavior
         if(isset($config['owner'])){
             return TableRegistry::getTableLocator()->get($config['owner']);
         }else{
-            throw new \Exception('owner must be set.');
+            throw new \Exception('\'owner\' must be set.');
         }
     }
 
@@ -118,20 +118,17 @@ class OwnershipBehavior extends Behavior
      */
     protected function _getOwnerAssociation()
     {
-        $config = static::_getOwnerAssocConfig($this->table()->getAlias());
-        if(is_null($config['parent'])){
+        if(is_null(static::_getOwnerAssocConfig($this->table()->getAlias())['parent'])){
             return false;
-        }else{
-            $assocName = $config['parent'];
         }
 
         $assoc = $this->table();
         $path = [];
         do{
-            $assocName = static::_getOwnerAssocConfig($assoc->getAlias())['parent'];
-            $assoc = $assoc->getAssociation($assocName);
-            $path[] = $assocName;
-        }while(!static::_getOwnerAssocConfig($assoc->getAlias())['is_owner']);
+            $config = static::_getOwnerAssocConfig($assoc->getAlias());
+            $assoc = $assoc->getAssociation($config['parent']);
+            $path[] = $config['parent'];
+        }while(static::_getOwnerAssocConfig($assoc->getAlias())['owner'] == $config['owner']);
         return $path;
     }
 
@@ -164,14 +161,21 @@ class OwnershipBehavior extends Behavior
         }
 
         $conditions = [];
+        $nullFKey = false;
         $foreignKey = (array)$assoc->getForeignKey();
         $bindingKey = (array)$assoc->getBindingKey();
         foreach(array_combine($bindingKey, $foreignKey) as $bKey => $fKey){
             if(!is_null($entity->{$fKey})){
                 $conditions[$assoc->getAlias().'.'.$bKey] = $entity->{$fKey};
-            }else{
-                throw new \Exception('Foreign key('.preg_replace('/^.*\\\\/', '', $entity::class).'.'.$fKey.') must not be null.');
+            }else if($nullFKey === false){
+                $nullFKey = $fKey;
             }
+            if(count($conditions) > 0 && $nullFKey !== false){
+                throw new \Exception('Foreign key('.preg_replace('/^.*\\\\/', '', $entity::class).'.'.$nullFKey.') must not be null, or all foreign keys need to be set to null.');
+            }
+        }
+        if($nullFKey !== false){
+            return null;
         }
 
         $query = $assoc->getTarget()->find()->disableHydration();
@@ -188,13 +192,13 @@ class OwnershipBehavior extends Behavior
      * Get whether the ownership is consistent.
      * 
      * @param EntityInterface $entity
+     * @param string $owner
      * @param array<string,mixed>|null $ownerId
      * @return bool
      * @throws \Exception
      */
-    protected function _isOwnerConsistent(EntityInterface $entity, ?array $ownerId): bool
+    protected function _isOwnerConsistent(EntityInterface $entity, string $owner, ?array $ownerId): bool
     {
-        $owner = static::_getOwnerAssocConfig($this->table()->getAlias())['owner'];
         foreach($this->table()->associations() as $assoc){
             $behavior = static::_getBehavior($assoc->getAlias());
             if(is_null($behavior)){
@@ -202,32 +206,24 @@ class OwnershipBehavior extends Behavior
             }
 
             $config = static::_getOwnerAssocConfig($assoc->getAlias());
-            if(!($config['is_owner'] && $assoc->getAlias() == $owner || $config['owner'] == $owner)){
+            if(!in_array($owner, [$assoc->getAlias(), $config['owner']])){
                 continue;
             }
 
             if($assoc->type() == Association::MANY_TO_ONE){
                 if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty())){
-                    if($behavior->_isOwnerConsistent($entity->{$assoc->getProperty()}, $ownerId) === false){
+                    if($behavior->_isOwnerConsistent($entity->{$assoc->getProperty()}, $owner, $ownerId) === false){
                         return false;
                     }
                 }else{
-                    foreach((array)$assoc->getForeignKey() as $fKey){
-                        if(isset($entity->{$fKey})){
-                            if($this->_getOwnerId($entity, $assoc) != $ownerId){
-                                return false;
-                            }else{
-                                break;
-                            }
-                        }else{
-                            throw new \Exception('Foreign key('.preg_replace('/^.*\\\\/', '', $entity::class).'.'.$fKey.') must not be null.');
-                        }
+                    if($this->_getOwnerId($entity, $assoc) != $ownerId){
+                        return false;
                     }
                 }
             }else if($assoc->type() == Association::MANY_TO_MANY){
                 if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty())){
                     foreach($entity->{$assoc->getProperty()} as $childEntity){
-                        if($behavior->_isOwnerConsistent($childEntity, $ownerId) === false){
+                        if($behavior->_isOwnerConsistent($childEntity, $owner, $ownerId) === false){
                             return false;
                         }
                     }
@@ -248,7 +244,9 @@ class OwnershipBehavior extends Behavior
     public function getOwnerId(EntityInterface $entity)
     {
         if($this->table()->getEntityClass() != $entity::class){
-            throw new \Exception('Entity class do not match. ('.preg_replace('/^.*\\\\/', '', $entity::class).' entity is given.)');
+            $thisEntityClass = preg_replace('/^.*\\\\/', '', $this->table()->getEntityClass());
+            $entityClass = preg_replace('/^.*\\\\/', '', $entity::class);
+            throw new \Exception('Entity class does not match '.$thisEntityClass.'. ('.$entityClass.' entity was given.)');
         }
 
         $ownerAssoc = $this->_getOwnerAssociation();
@@ -259,7 +257,7 @@ class OwnershipBehavior extends Behavior
         $assoc = $this->table();
         while(true){
             $assoc = $assoc->getAssociation(array_shift($ownerAssoc));
-            if(isset($entity->{$assoc->getProperty()}) && count($ownerAssoc) > 0){
+            if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty()) && count($ownerAssoc) > 0){
                 $entity = $entity->{$assoc->getProperty()};
             }else{
                 return static::_getBehavior($assoc->getSource()->getAlias())->_getOwnerId($entity, $assoc);
@@ -276,12 +274,13 @@ class OwnershipBehavior extends Behavior
      */
     public function isOwnerConsistent(EntityInterface $entity): bool
     {
+        $owner = static::_getOwnerAssocConfig($this->table()->getAlias())['owner'];
         $ownerId = $this->getOwnerId($entity);
         if($ownerId === false){
             return true;
         }
 
-        return $this->_isOwnerConsistent($entity, $ownerId);
+        return $this->_isOwnerConsistent($entity, $owner, $ownerId);
     }
 
     /**
@@ -333,6 +332,35 @@ class OwnershipBehavior extends Behavior
 
         return $query
             ->innerJoinWith(implode('.', $ownerAssoc))
+            ->where($conditions);
+    }
+
+    /**
+     * Get the entity that does not have ownership (assuming that the ownership of the association is consistent).
+     *
+     * @param Query $query
+     * @param array $options
+     * @return Query
+     * @throws \Exception
+     */
+    public function findNonOwned(Query $query, array $options): Query
+    {
+        $primaryKey = (array)$this->_getOwnersTable()->getPrimaryKey();
+
+        $ownerAssoc = $this->_getOwnerAssociation();
+        if($ownerAssoc === false){
+            return $query;
+        }
+
+        $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
+
+        $conditions = [];
+        foreach($primaryKey as $key){
+            $conditions[$ownerAssocName.'.'.$key.' IS'] = null;
+        }
+
+        return $query
+            ->leftJoinWith(implode('.', $ownerAssoc))
             ->where($conditions);
     }
 
