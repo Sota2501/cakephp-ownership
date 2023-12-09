@@ -137,7 +137,7 @@ class OwnershipBehavior extends Behavior
      * 
      * @param EntityInterface $entity
      * @param Association $assoc
-     * @return array<string,mixed>|false|null
+     * @return array<string,mixed>|bool|null
      * @throws \Exception
      */
     protected function _getOwnerId(EntityInterface $entity, Association $assoc)
@@ -185,7 +185,7 @@ class OwnershipBehavior extends Behavior
         return $query
             ->select($ownerPrimary)
             ->where($conditions)
-            ->first();
+            ->first() ?? true;
     }
 
     /**
@@ -256,7 +256,8 @@ class OwnershipBehavior extends Behavior
             if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty()) && count($ownerAssoc) > 0){
                 $entity = $entity->{$assoc->getProperty()};
             }else{
-                return static::_getBehavior($assoc->getSource()->getAlias())->_getOwnerId($entity, $assoc);
+                $ownerId = static::_getBehavior($assoc->getSource()->getAlias())->_getOwnerId($entity, $assoc);
+                return $ownerId === true ? null : $ownerId;
             }
         }
     }
