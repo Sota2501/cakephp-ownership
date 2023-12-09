@@ -200,18 +200,14 @@ class OwnershipBehavior extends Behavior
     protected function _isOwnerConsistent(EntityInterface $entity, string $owner, ?array $ownerId): bool
     {
         foreach($this->table()->associations() as $assoc){
-            $behavior = static::_getBehavior($assoc->getAlias());
-            if(is_null($behavior)){
-                continue;
-            }
-
             $config = static::_getOwnerAssocConfig($assoc->getAlias());
             if(!in_array($owner, [$assoc->getAlias(), $config['owner']])){
                 continue;
             }
 
+            $behavior = static::_getBehavior($assoc->getAlias());
             if($assoc->type() == Association::MANY_TO_ONE){
-                if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty())){
+                if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty()) && isset($behavior)){
                     if($behavior->_isOwnerConsistent($entity->{$assoc->getProperty()}, $owner, $ownerId) === false){
                         return false;
                     }
