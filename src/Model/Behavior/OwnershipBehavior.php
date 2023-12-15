@@ -7,6 +7,8 @@ use ArrayObject;
 use Cake\Datasource\EntityInterface;
 use Cake\Event\EventInterface;
 use Cake\ORM\Association;
+use Cake\ORM\Association\BelongsTo;
+use Cake\ORM\Association\BelongsToMany;
 use Cake\ORM\Behavior;
 use Cake\ORM\Query;
 use Cake\ORM\Table;
@@ -113,22 +115,26 @@ class OwnershipBehavior extends Behavior
     /**
      * Get the association path to the owner model.
      *
+     * @param string|null $owner
      * @return array|false
      * @throws \Exception
      */
-    protected function _getOwnerAssociation()
+    protected function _getOwnerAssociation(string $owner = null)
     {
-        if(is_null(static::_getOwnerAssocConfig($this->table()->getAlias())['parent'])){
+        $config = static::_getOwnerAssocConfig($this->table()->getAlias());
+        if(is_null($config['parent'])){
             return false;
+        }else if(is_null($owner)){
+            $owner = $config['owner'];
         }
 
         $assoc = $this->table();
         $path = [];
-        do{
-            $config = static::_getOwnerAssocConfig($assoc->getAlias());
-            $assoc = $assoc->getAssociation($config['parent']);
+        while($config['owner'] == $owner){
             $path[] = $config['parent'];
-        }while(static::_getOwnerAssocConfig($assoc->getAlias())['owner'] == $config['owner']);
+            $assoc = $assoc->getAssociation($config['parent']);
+            $config = static::_getOwnerAssocConfig($assoc->getAlias());
+        }
         return $path;
     }
 
@@ -136,22 +142,30 @@ class OwnershipBehavior extends Behavior
      * Get the value of the primary key of the owner.
      * 
      * @param EntityInterface $entity
-     * @param Association $assoc
-     * @return array<string,mixed>|bool|null
+     * @param BelongsTo $belongsTo
+     * @return array<string,mixed>|false|null
      * @throws \Exception
      */
-    protected function _getOwnerId(EntityInterface $entity, Association $assoc)
+    protected function _getOwnerId(EntityInterface $entity, BelongsTo $belongsTo)
     {
-        $ownerAssoc = $this->_getOwnerAssociation();
-        if($ownerAssoc === false){
+        $config = static::_getOwnerAssocConfig($this->table()->getAlias());
+        if(is_null($config['owner'])){
             return false;
-        }else{
-            array_shift($ownerAssoc);
         }
 
-        if(count($ownerAssoc) == 0){
-            $ownerAssocName = $assoc->getAlias();
+        if($belongsTo->getAlias() == $config['owner'] && $belongsTo->getName() == $config['parent']){
+            $ownerAssoc = [];
+            $ownerAssocName = $belongsTo->getName();
         }else{
+            $behavior = static::_getBehavior($belongsTo->getAlias());
+            if(is_null($behavior)){
+                return false;
+            }
+
+            $ownerAssoc = $behavior->_getOwnerAssociation($config['owner']);
+            if($ownerAssoc === false || count($ownerAssoc) == 0){
+                return false;
+            }
             $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
         }
 
@@ -162,11 +176,11 @@ class OwnershipBehavior extends Behavior
 
         $conditions = [];
         $nullFKey = false;
-        $foreignKey = (array)$assoc->getForeignKey();
-        $bindingKey = (array)$assoc->getBindingKey();
+        $foreignKey = (array)$belongsTo->getForeignKey();
+        $bindingKey = (array)$belongsTo->getBindingKey();
         foreach(array_combine($bindingKey, $foreignKey) as $bKey => $fKey){
             if(!is_null($entity->{$fKey})){
-                $conditions[$assoc->getAlias().'.'.$bKey] = $entity->{$fKey};
+                $conditions[$belongsTo->getAlias().'.'.$bKey] = $entity->{$fKey};
             }else if($nullFKey === false){
                 $nullFKey = $fKey;
             }
@@ -175,10 +189,14 @@ class OwnershipBehavior extends Behavior
             }
         }
         if($nullFKey !== false){
-            return true;
+            if($belongsTo->getName() == $config['parent']){
+                return null;
+            }else{
+                return false;
+            }
         }
 
-        $query = $assoc->getTarget()->find()->disableHydration();
+        $query = $belongsTo->getTarget()->find()->disableHydration();
         if(count($ownerAssoc) > 0){
             $query->innerJoinWith(implode('.', $ownerAssoc));
         }
@@ -189,39 +207,105 @@ class OwnershipBehavior extends Behavior
     }
 
     /**
+     * Get the value of the primary key of the owner.
+     *
+     * @param EntityInterface $entity
+     * @param BelongsToMany $belongsToMany
+     * @return array<string,mixed>[]|false
+     */
+    protected function _getOwnerIds(EntityInterface $entity, BelongsToMany $belongsToMany)
+    {
+        if($entity->isNew()){
+            return false;
+        }
+
+        $config = static::_getOwnerAssocConfig($this->table()->getAlias());
+        if(is_null($config['owner'])){
+            return false;
+        }
+        
+        $behavior = static::_getBehavior($belongsToMany->getAlias());
+        if(is_null($behavior)){
+            return false;
+        }
+
+        $ownerAssoc = $behavior->_getOwnerAssociation($config['owner']);
+        if($ownerAssoc === false || count($ownerAssoc) == 0){
+            return false;
+        }
+        array_unshift($ownerAssoc, $belongsToMany->getName());
+        $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
+
+        $ownerPrimary = [];
+        foreach((array)$this->_getOwnersTable()->getPrimaryKey() as $key){
+            $ownerPrimary[$key] = $ownerAssocName.'.'.$key;
+        }
+
+        $conditions = [];
+        $junction = $belongsToMany->junction();
+        $foreignKey = (array)$belongsToMany->getForeignKey();
+        $bindingKey = (array)$belongsToMany->getBindingKey();
+        foreach(array_combine($bindingKey, $foreignKey) as $bKey => $fKey){
+            if(!is_null($entity->{$bKey})){
+                $conditions[$junction->getAlias().'.'.$fKey] = $entity->{$bKey};
+            }else{
+                throw new \Exception('Binding key('.preg_replace('/^.*\\\\/', '', $entity::class).'.'.$bKey.') must not be null.');
+            }
+        }
+
+        return $junction->find()
+            ->disableHydration()
+            ->innerJoinWith(implode('.', $ownerAssoc))
+            ->select($ownerPrimary)
+            ->where($conditions)
+            ->toArray();
+    }
+
+    /**
      * Get whether the ownership is consistent.
      * 
      * @param EntityInterface $entity
-     * @param string $owner
      * @param array<string,mixed>|null $ownerId
      * @return bool
      * @throws \Exception
      */
-    protected function _isOwnerConsistent(EntityInterface $entity, string $owner, ?array $ownerId): bool
+    protected function _isOwnerConsistent(EntityInterface $entity, ?array $ownerId): bool
     {
+        $config = static::_getOwnerAssocConfig($this->table()->getAlias());
         foreach($this->table()->associations() as $assoc){
-            $config = static::_getOwnerAssocConfig($assoc->getAlias());
-            if(!in_array($owner, [$assoc->getAlias(), $config['owner']])){
+            $isOwnerAssoc = false;
+            if($config['owner'] == $assoc->getAlias() && $config['parent'] == $assoc->getName()){
+                $isOwnerAssoc = true;
+            }else if($config['owner'] != static::_getOwnerAssocConfig($assoc->getAlias())['owner']){
                 continue;
             }
 
             $behavior = static::_getBehavior($assoc->getAlias());
             if($assoc->type() == Association::MANY_TO_ONE){
-                if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty()) && isset($behavior)){
-                    if($behavior->_isOwnerConsistent($entity->{$assoc->getProperty()}, $owner, $ownerId) === false){
+                if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty()) && !$isOwnerAssoc){
+                    if($behavior->_isOwnerConsistent($entity->{$assoc->getProperty()}, $ownerId) === false){
                         return false;
                     }
                 }else{
-                    if(!in_array($this->_getOwnerId($entity, $assoc), [true, $ownerId])){
+                    if(!in_array($this->_getOwnerId($entity, $assoc), [false, $ownerId])){
                         return false;
                     }
                 }
             }else if($assoc->type() == Association::MANY_TO_MANY){
                 if(isset($entity->{$assoc->getProperty()}) && $entity->isDirty($assoc->getProperty())){
                     foreach($entity->{$assoc->getProperty()} as $childEntity){
-                        if($behavior->_isOwnerConsistent($childEntity, $owner, $ownerId) === false){
+                        if($behavior->_isOwnerConsistent($childEntity, $ownerId) === false){
                             return false;
                         }
+                    }
+                }else{
+                    $btmOwnerIds = $this->_getOwnerIds($entity, $assoc);
+                    if($btmOwnerIds !== false){
+                        foreach($btmOwnerIds as $btmOwnerId){
+                            if($btmOwnerId != $ownerId){
+                                return false;
+                            }    
+                        }    
                     }
                 }
             }
@@ -257,7 +341,7 @@ class OwnershipBehavior extends Behavior
                 $entity = $entity->{$assoc->getProperty()};
             }else{
                 $ownerId = static::_getBehavior($assoc->getSource()->getAlias())->_getOwnerId($entity, $assoc);
-                return $ownerId === true ? null : $ownerId;
+                return $ownerId;
             }
         }
     }
@@ -271,13 +355,12 @@ class OwnershipBehavior extends Behavior
      */
     public function isOwnerConsistent(EntityInterface $entity): bool
     {
-        $owner = static::_getOwnerAssocConfig($this->table()->getAlias())['owner'];
         $ownerId = $this->getOwnerId($entity);
         if($ownerId === false){
             return true;
         }
 
-        return $this->_isOwnerConsistent($entity, $owner, $ownerId);
+        return $this->_isOwnerConsistent($entity, $ownerId);
     }
 
     /**
@@ -315,7 +398,6 @@ class OwnershipBehavior extends Behavior
         if($ownerAssoc === false){
             return $query;
         }
-
         $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
 
         $ownerKey = [];
@@ -348,7 +430,6 @@ class OwnershipBehavior extends Behavior
         if($ownerAssoc === false){
             return $query;
         }
-
         $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
 
         $conditions = [];
