@@ -373,8 +373,13 @@ class OwnershipBehavior extends Behavior
      */
     public function findOwned(Query $query, array $options): Query
     {
-        $primaryKey = (array)$this->_getOwnersTable()->getPrimaryKey();
+        $ownerAssoc = $this->_getOwnerAssociation();
+        if($ownerAssoc === false){
+            return $query;
+        }
+        $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
 
+        $primaryKey = (array)$this->_getOwnersTable()->getPrimaryKey();
         $currentEntity = $this->_getCurrentEntity();
         if(isset($options['owner_id'])){
             $ownerId = $options['owner_id'];
@@ -393,12 +398,6 @@ class OwnershipBehavior extends Behavior
         }else{
             return $query;
         }
-
-        $ownerAssoc = $this->_getOwnerAssociation();
-        if($ownerAssoc === false){
-            return $query;
-        }
-        $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
 
         $ownerKey = [];
         foreach($primaryKey as $key){
@@ -424,14 +423,13 @@ class OwnershipBehavior extends Behavior
      */
     public function findNonOwned(Query $query, array $options): Query
     {
-        $primaryKey = (array)$this->_getOwnersTable()->getPrimaryKey();
-
         $ownerAssoc = $this->_getOwnerAssociation();
         if($ownerAssoc === false){
             return $query;
         }
         $ownerAssocName = $ownerAssoc[count($ownerAssoc)-1];
 
+        $primaryKey = (array)$this->_getOwnersTable()->getPrimaryKey();
         $conditions = [];
         foreach($primaryKey as $key){
             $conditions[$ownerAssocName.'.'.$key.' IS'] = null;
