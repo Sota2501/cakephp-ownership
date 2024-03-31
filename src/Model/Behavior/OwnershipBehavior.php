@@ -38,13 +38,13 @@ class OwnershipBehavior extends Behavior
      * Get the behavior instance.
      *
      * @param string $tableAlias Table alias
-     * @return static|null The behavior instance.
+     * @return self|null The behavior instance.
      */
-    protected static function _getBehavior(string $tableAlias): ?static
+    protected static function _getBehavior(string $tableAlias): ?self
     {
         $table = TableRegistry::getTableLocator()->get($tableAlias);
         if ($table->hasBehavior('Ownership')) {
-            /** @var static $behavior */
+            /** @var self $behavior */
             $behavior = $table->getBehavior('Ownership');
 
             return $behavior;
@@ -62,7 +62,7 @@ class OwnershipBehavior extends Behavior
      */
     protected static function _getOwnerAssocConfig(string $tableAlias): array
     {
-        if (!isset(static::$_ownerAssociations[$tableAlias])) {
+        if (!isset(self::$_ownerAssociations[$tableAlias])) {
             $table = TableRegistry::getTableLocator()->get($tableAlias);
             $behavior = static::_getBehavior($tableAlias);
 
@@ -90,10 +90,10 @@ class OwnershipBehavior extends Behavior
                 $owner = null;
                 $parent = null;
             }
-            static::$_ownerAssociations[$tableAlias] = ['owner' => $owner, 'parent' => $parent];
+            self::$_ownerAssociations[$tableAlias] = ['owner' => $owner, 'parent' => $parent];
         }
 
-        return static::$_ownerAssociations[$tableAlias];
+        return self::$_ownerAssociations[$tableAlias];
     }
 
     /**
@@ -197,7 +197,7 @@ class OwnershipBehavior extends Behavior
         $nullFKey = false;
         $foreignKey = (array)$belongsTo->getForeignKey();
         $bindingKey = (array)$belongsTo->getBindingKey();
-        foreach (array_combine($bindingKey, $foreignKey) as $bKey => $fKey) {
+        foreach ((array)array_combine($bindingKey, $foreignKey) as $bKey => $fKey) {
             if (!is_null($entity->{$fKey})) {
                 $conditions[$belongsTo->getAlias() . '.' . $bKey] = $entity->{$fKey};
             } elseif ($nullFKey === false) {
@@ -206,7 +206,7 @@ class OwnershipBehavior extends Behavior
             if (count($conditions) > 0 && $nullFKey !== false) {
                 throw new Exception(sprintf(
                     'Foreign key(%s.%s) must not be null, or all foreign keys need to be set to null.',
-                    preg_replace('/^.*\\\\/', '', $entity::class),
+                    preg_replace('/^.*\\\\/', '', get_class($entity)),
                     $nullFKey
                 ));
             }
@@ -273,13 +273,13 @@ class OwnershipBehavior extends Behavior
         $junction = $belongsToMany->junction();
         $foreignKey = (array)$belongsToMany->getForeignKey();
         $bindingKey = (array)$belongsToMany->getBindingKey();
-        foreach (array_combine($bindingKey, $foreignKey) as $bKey => $fKey) {
+        foreach ((array)array_combine($bindingKey, $foreignKey) as $bKey => $fKey) {
             if (!is_null($entity->{$bKey})) {
                 $conditions[$junction->getAlias() . '.' . $fKey] = $entity->{$bKey};
             } else {
                 throw new Exception(sprintf(
                     'Binding key(%s.%s) must not be null.',
-                    preg_replace('/^.*\\\\/', '', $entity::class),
+                    preg_replace('/^.*\\\\/', '', get_class($entity)),
                     $bKey
                 ));
             }
@@ -312,7 +312,7 @@ class OwnershipBehavior extends Behavior
                 continue;
             }
 
-            /** @var static $behavior */
+            /** @var self $behavior */
             $behavior = static::_getBehavior($assoc->getAlias());
             if ($assoc->type() == Association::MANY_TO_ONE) {
                 /** @var \Cake\ORM\Association\BelongsTo $assoc */
@@ -362,11 +362,11 @@ class OwnershipBehavior extends Behavior
      */
     public function getOwnerId(EntityInterface $entity)
     {
-        if ($this->table()->getEntityClass() != $entity::class) {
+        if ($this->table()->getEntityClass() != get_class($entity)) {
             throw new Exception(sprintf(
                 'Entity class does not match %s. (%s entity was given.)',
                 preg_replace('/^.*\\\\/', '', $this->table()->getEntityClass()),
-                preg_replace('/^.*\\\\/', '', $entity::class)
+                preg_replace('/^.*\\\\/', '', get_class($entity))
             ));
         }
 
@@ -387,7 +387,7 @@ class OwnershipBehavior extends Behavior
             ) {
                 $entity = $entity->{$assoc->getProperty()};
             } else {
-                /** @var static $behavior */
+                /** @var self $behavior */
                 $behavior = static::_getBehavior($assoc->getSource()->getAlias());
 
                 $ownerId = $behavior->_getOwnerId($entity, $assoc);
@@ -467,7 +467,7 @@ class OwnershipBehavior extends Behavior
                 count($ownerKey)
             ));
         }
-        $conditions = array_combine($ownerKey, $ownerId);
+        $conditions = (array)array_combine($ownerKey, $ownerId);
 
         return $query
             ->innerJoinWith(implode('.', $ownerAssoc))
