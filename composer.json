@@ -4,10 +4,12 @@
     "type": "cakephp-plugin",
     "license": "MIT",
     "require": {
-        "php": ">=7.2",
+        "php": ">=7.4",
         "cakephp/cakephp": "^4.5.0"
     },
     "require-dev": {
+        "cakephp/cakephp-codesniffer": "^4.0",
+        "phpstan/phpstan": "^1.10",
         "phpunit/phpunit": "^8.5 || ^9.3"
     },
     "autoload": {
@@ -19,6 +21,22 @@
         "psr-4": {
             "Ownership\\Test\\": "tests/",
             "Cake\\Test\\": "vendor/cakephp/cakephp/tests/"
+        }
+    },
+    "scripts": {
+        "check": [
+            "@stan",
+            "@test",
+            "@cs-check"
+        ],
+        "cs-check": "phpcs --colors -p",
+        "cs-fix": "phpcbf --colors -p",
+        "stan": "phpstan analyse",
+        "test": "phpunit --colors=always"
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
         }
     }
 }

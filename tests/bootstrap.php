@@ -1,13 +1,14 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Test suite bootstrap for Ownership.
- *
- * This function is used to find the location of CakePHP whether CakePHP
- * has been installed as a dependency of the plugin, or the plugin is itself
- * installed as a dependency of an application.
- */
+use Cake\Cache\Cache;
+use Cake\Core\Configure;
+use Cake\Core\Plugin;
+use Cake\Datasource\ConnectionManager;
+use Cake\TestSuite\Fixture\SchemaLoader;
+use Ownership\Plugin as OwnershipPlugin;
+use function Cake\Core\env;
+
 $findRoot = function ($root) {
     do {
         $lastRoot = $root;
@@ -21,35 +22,49 @@ $findRoot = function ($root) {
 };
 $root = $findRoot(__FILE__);
 unset($findRoot);
-
 chdir($root);
 
 require_once $root . '/vendor/autoload.php';
 
-/**
- * Define fallback values for required constants and configuration.
- * To customize constants and configuration remove this require
- * and define the data required by your plugin here.
- */
-require_once $root . '/vendor/cakephp/cakephp/tests/bootstrap.php';
+define('ROOT', $root . DS . 'tests' . DS . 'test_app' . DS);
+define('APP', ROOT . 'src' . DS);
+define('TMP', sys_get_temp_dir() . DS);
+define('CACHE', TMP . 'cache' . DS);
 
-if (file_exists($root . '/config/bootstrap.php')) {
-    require $root . '/config/bootstrap.php';
+Configure::write('debug', true);
+Configure::write('App', [
+    'namespace' => 'TestApp',
+    'encoding' => 'UTF-8',
+    'paths' => [
+        'plugins' => [ROOT . 'plugins' . DS],
+        'templates' => [ROOT . 'templates' . DS],
+    ],
+]);
 
-    return;
+Cache::setConfig([
+    '_cake_core_' => [
+        'engine' => 'File',
+        'prefix' => 'cake_core_',
+        'serialize' => true,
+        'path' => CACHE,
+    ],
+    '_cake_model_' => [
+        'engine' => 'File',
+        'prefix' => 'cake_model_',
+        'serialize' => true,
+        'path' => CACHE,
+    ],
+]);
+
+if (!getenv('DB_URL')) {
+    putenv('DB_URL=sqlite:///:memory:');
+}
+ConnectionManager::setConfig('test', ['url' => getenv('DB_URL')]);
+
+// Create test database schema
+if (env('FIXTURE_SCHEMA_METADATA')) {
+    $loader = new SchemaLoader();
+    $loader->loadInternalFile(env('FIXTURE_SCHEMA_METADATA'));
 }
 
-/**
- * Load schema from a SQL dump file.
- *
- * If your plugin does not use database fixtures you can
- * safely delete this.
- *
- * If you want to support multiple databases, consider
- * using migrations to provide schema for your plugin,
- * and using \Migrations\TestSuite\Migrator to load schema.
- */
-use Cake\TestSuite\Fixture\SchemaLoader;
-
-// Load a schema dump file.
-(new SchemaLoader())->loadSqlFiles('tests/schema.sql', 'test');
+Plugin::getCollection()->add(new OwnershipPlugin());
