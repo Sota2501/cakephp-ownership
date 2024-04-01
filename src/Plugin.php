@@ -42,7 +42,7 @@ class Plugin extends BasePlugin
         $routes->plugin(
             'Ownership',
             ['path' => '/ownership'],
-            function (RouteBuilder $builder) {
+            function (RouteBuilder $builder): void {
                 // Add custom routes here
 
                 $builder->fallbacks();

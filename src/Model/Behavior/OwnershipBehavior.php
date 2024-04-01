@@ -10,7 +10,7 @@ use Cake\ORM\Association;
 use Cake\ORM\Association\BelongsTo;
 use Cake\ORM\Association\BelongsToMany;
 use Cake\ORM\Behavior;
-use Cake\ORM\Query;
+use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\TableRegistry;
 use Exception;
 use Ownership\Model\Table\OwnersTableInterface;
@@ -25,14 +25,14 @@ class OwnershipBehavior extends Behavior
      *
      * @var array<string, mixed>
      */
-    protected $_defaultConfig = [];
+    protected array $_defaultConfig = [];
 
     /**
      * Owner associations.
      *
      * @var array<string, array{owner: ?string, parent: ?string}>
      */
-    protected static $_ownerAssociations = [];
+    protected static array $_ownerAssociations = [];
 
     /**
      * Get the behavior instance.
@@ -134,7 +134,7 @@ class OwnershipBehavior extends Behavior
      * @return array|false The association path to the owner model.
      * @throws \Exception
      */
-    protected function _getOwnerAssociation(?string $owner = null)
+    protected function _getOwnerAssociation(?string $owner = null): array|false
     {
         $config = static::_getOwnerAssocConfig($this->table()->getAlias());
         if (is_null($config['parent'])) {
@@ -165,7 +165,7 @@ class OwnershipBehavior extends Behavior
      * @return array<string,mixed>|false|null If false, the owner ID could not be retrieved.
      * @throws \Exception
      */
-    protected function _getOwnerId(EntityInterface $entity, BelongsTo $belongsTo)
+    protected function _getOwnerId(EntityInterface $entity, BelongsTo $belongsTo): array|false|null
     {
         $config = static::_getOwnerAssocConfig($this->table()->getAlias());
         if (is_null($config['owner'])) {
@@ -238,10 +238,10 @@ class OwnershipBehavior extends Behavior
      *
      * @param \Cake\Datasource\EntityInterface $entity The entity for which to retrieve owner IDs.
      * @param \Cake\ORM\Association\BelongsToMany $belongsToMany The BelongsToMany association.
-     * @return array<string,mixed>[]|false If false, the owner IDs could not be retrieved.
+     * @return array<array<string, mixed>>|false If false, the owner IDs could not be retrieved.
      * @throws \Exception
      */
-    protected function _getOwnerIds(EntityInterface $entity, BelongsToMany $belongsToMany)
+    protected function _getOwnerIds(EntityInterface $entity, BelongsToMany $belongsToMany): array|false
     {
         if ($entity->isNew()) {
             return false;
@@ -360,7 +360,7 @@ class OwnershipBehavior extends Behavior
      * @return array<string,mixed>|false|null If false, the owner IDs could not be retrieved.
      * @throws \Exception
      */
-    public function getOwnerId(EntityInterface $entity)
+    public function getOwnerId(EntityInterface $entity): array|false|null
     {
         if ($this->table()->getEntityClass() != get_class($entity)) {
             throw new Exception(sprintf(
@@ -421,12 +421,12 @@ class OwnershipBehavior extends Behavior
      * - `owner_id` The owner ID to find.
      *   If the owner ID is not set, the owner ID of the current entity is used.
      *
-     * @param \Cake\ORM\Query $query The query to find with the owner condition.
+     * @param \Cake\ORM\Query\SelectQuery $query The query to find with the owner condition.
      * @param array $options The options for the query.
-     * @return \Cake\ORM\Query The query with the owner condition.
+     * @return \Cake\ORM\Query\SelectQuery The query with the owner condition.
      * @throws \Exception
      */
-    public function findOwned(Query $query, array $options): Query
+    public function findOwned(SelectQuery $query, array $options): SelectQuery
     {
         $ownerAssoc = $this->_getOwnerAssociation();
         if ($ownerAssoc === false) {
@@ -477,12 +477,12 @@ class OwnershipBehavior extends Behavior
     /**
      * Returns the query with the non-owned condition.
      *
-     * @param \Cake\ORM\Query $query The query to find with the non-owned condition.
+     * @param \Cake\ORM\Query\SelectQuery $query The query to find with the non-owned condition.
      * @param array $options The options for the query.
-     * @return \Cake\ORM\Query The query with the non-owned condition.
+     * @return \Cake\ORM\Query\SelectQuery The query with the non-owned condition.
      * @throws \Exception
      */
-    public function findNonOwned(Query $query, array $options): Query
+    public function findNonOwned(SelectQuery $query, array $options): SelectQuery
     {
         $ownerAssoc = $this->_getOwnerAssociation();
         if ($ownerAssoc === false) {
@@ -511,7 +511,7 @@ class OwnershipBehavior extends Behavior
      * @return false|null Returns false if the owner is inconsistent, null otherwise.
      * @throws \Exception
      */
-    public function beforeSave(EventInterface $event, EntityInterface $entity, ArrayObject $options)
+    public function beforeSave(EventInterface $event, EntityInterface $entity, ArrayObject $options): ?false
     {
         if (!$this->isOwnerConsistent($entity)) {
             $event->stopPropagation();
