@@ -8,7 +8,7 @@
 
     <!-- Add any additional test suites you want to run here -->
     <testsuites>
-        <testsuite name="ownership">
+        <testsuite name="Ownership">
             <directory>tests/TestCase/</directory>
         </testsuite>
     </testsuites>

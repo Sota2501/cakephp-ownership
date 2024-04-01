@@ -1,7 +1,7 @@
 parameters:
-    level: 8
-    treatPhpDocTypesAsCertain: false
-    checkMissingIterableValueType: false
-    checkGenericClassInNonGenericObjectType: false
-    paths:
-        - src/
+	level: 8
+	treatPhpDocTypesAsCertain: false
+	checkMissingIterableValueType: false
+	checkGenericClassInNonGenericObjectType: false
+	paths:
+		- src/
