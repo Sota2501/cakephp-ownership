@@ -11,6 +11,7 @@ use Cake\ORM\Association\BelongsTo;
 use Cake\ORM\Association\BelongsToMany;
 use Cake\ORM\Behavior;
 use Cake\ORM\Query\SelectQuery;
+use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Exception;
 use Ownership\Model\Table\OwnersTableInterface;
@@ -102,7 +103,7 @@ class OwnershipBehavior extends Behavior
      * @return \Cake\ORM\Table&\Ownership\Model\Table\OwnersTableInterface The owner table.
      * @throws \Exception
      */
-    protected function _getOwnersTable(): OwnersTableInterface
+    protected function _getOwnersTable(): Table&OwnersTableInterface
     {
         $config = static::_getOwnerAssocConfig($this->table()->getAlias());
         if (isset($config['owner'])) {
@@ -511,7 +512,7 @@ class OwnershipBehavior extends Behavior
      * @return false|null Returns false if the owner is inconsistent, null otherwise.
      * @throws \Exception
      */
-    public function beforeSave(EventInterface $event, EntityInterface $entity, ArrayObject $options): ?false
+    public function beforeSave(EventInterface $event, EntityInterface $entity, ArrayObject $options)
     {
         if (!$this->isOwnerConsistent($entity)) {
             $event->stopPropagation();
